@@ -42,8 +42,9 @@ void setup() {
     // Initialize WiFi
     initWiFi();
     
-    // Initialize and start BLE beacon with name "11"
-    bleBeacon.init("11");
+    // Initialize and start BLE beacon
+    // Using a proper UUID for iBeacon (you can generate your own at https://www.uuidgenerator.net/)
+    bleBeacon.init("8ec76ea3-6668-48da-9866-75be8bc86f4d", 1, 1, -59);
     bleBeacon.startAdvertising();
 }
 

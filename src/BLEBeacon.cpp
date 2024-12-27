@@ -1,64 +1,84 @@
 #include "BLEBeacon.h"
 #include <Arduino.h>
 
-BLEBeacon::BLEBeacon() : deviceName(nullptr), isInitialized(false) {
+BLEBeacon::BLEBeacon() : major(0), minor(0), measuredPower(-59), isInitialized(false) {
 }
 
-void BLEBeacon::init(const char* name) {
-    deviceName = name;
-    
+void BLEBeacon::init(const char* uuid, uint16_t maj, uint16_t min, int8_t power) {
     // Initialize BLE device
-    NimBLEDevice::init(deviceName);
+    NimBLEDevice::init("");
+    
+    // Set power to maximum for better range
+    NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+    
+    // Set iBeacon parameters
+    this->uuid = NimBLEUUID(uuid);
+    this->major = maj;
+    this->minor = min;
+    this->measuredPower = power;
+    
     isInitialized = true;
     
-    Serial.printf("BLE Beacon initialized with name: %s\n", deviceName);
+    Serial.printf("iBeacon initialized with UUID: %s\n", uuid);
+}
+
+void BLEBeacon::setupAdvertisementData() {
+    // Get the advertising object
+    NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
+    
+    // Create iBeacon advertisement data
+    NimBLEAdvertisementData advData;
+    
+    std::string payload;
+    
+    // Apple iBeacon prefix
+    uint8_t prefix[] = {
+        0x02, 0x01, 0x06,        // Flags
+        0x1A, 0xFF,              // Manufacturer specific data (26 bytes)
+        0x4C, 0x00,              // Apple Company ID (0x004C)
+        0x02, 0x15               // iBeacon type and length
+    };
+    payload.append((char*)prefix, sizeof(prefix));
+    
+    // UUID
+    std::string uuidStr = uuid.toString();
+    uint8_t uuidBytes[16];
+    for(int i = 0; i < 16; i++) {
+        uuidBytes[i] = strtoul(uuidStr.substr(i * 2, 2).c_str(), nullptr, 16);
+    }
+    payload.append((char*)uuidBytes, 16);
+    
+    // Major (big endian)
+    uint8_t majorBytes[2] = { (uint8_t)(major >> 8), (uint8_t)(major & 0xFF) };
+    payload.append((char*)majorBytes, 2);
+    
+    // Minor (big endian)
+    uint8_t minorBytes[2] = { (uint8_t)(minor >> 8), (uint8_t)(minor & 0xFF) };
+    payload.append((char*)minorBytes, 2);
+    
+    // Measured power
+    payload.append(1, (char)measuredPower);
+    
+    // Set the raw advertisement data
+    advData.addData(payload);
+    pAdvertising->setAdvertisementData(advData);
+    
+    // Configure advertising parameters (100ms as per iBeacon specs)
+    pAdvertising->setMinInterval(0x64);  // 100ms
+    pAdvertising->setMaxInterval(0x64);  // 100ms
 }
 
 void BLEBeacon::startAdvertising() {
     if (!isInitialized) {
-        Serial.println("Error: BLE Beacon not initialized");
+        Serial.println("Error: iBeacon not initialized");
         return;
     }
 
-    // Get the advertising object
-    NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
-    
-    // Create advertisement data
-    NimBLEAdvertisementData advData;
-    
-    // Set advertising flags for maximum visibility
-    advData.setFlags(BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP);
-    
-    // Set the complete name
-    advData.setName(deviceName);
-    
-    // Set appearance as generic beacon
-    advData.setAppearance(0x0640); // Generic Tag appearance
-    
-    // Set manufacturer specific data to improve visibility
-    uint8_t manData[] = {0x4C, 0x00}; // Generic manufacturer data
-    advData.setManufacturerData(std::string((char*)manData, 2));
-    
-    // Set TX power level to maximum
-    NimBLEDevice::setPower(ESP_PWR_LVL_P9); // Maximum power level
-    
-    // Set the advertisement data
-    pAdvertising->setAdvertisementData(advData);
-    
-    // Configure advertising parameters for maximum visibility
-    pAdvertising->setMinInterval(0x10);  // 10ms minimum interval
-    pAdvertising->setMaxInterval(0x20);  // 20ms maximum interval
-    pAdvertising->setMinPreferred(0x10);  // Use minimum preferred
-    pAdvertising->setMaxPreferred(0x20);  // Use maximum preferred
-    
-    // Enable active scanning response
-    NimBLEAdvertisementData scanResponse;
-    scanResponse.setName(deviceName);
-    pAdvertising->setScanResponseData(scanResponse);
+    setupAdvertisementData();
     
     // Start advertising
     NimBLEDevice::startAdvertising();
-    Serial.println("BLE Beacon started advertising");
+    Serial.println("iBeacon started advertising");
 }
 
 void BLEBeacon::stopAdvertising() {
@@ -67,5 +87,26 @@ void BLEBeacon::stopAdvertising() {
     }
     
     NimBLEDevice::stopAdvertising();
-    Serial.println("BLE Beacon stopped advertising");
+    Serial.println("iBeacon stopped advertising");
+}
+
+void BLEBeacon::setMajor(uint16_t maj) {
+    major = maj;
+    if (isInitialized && NimBLEDevice::getAdvertising()->isAdvertising()) {
+        setupAdvertisementData();
+    }
+}
+
+void BLEBeacon::setMinor(uint16_t min) {
+    minor = min;
+    if (isInitialized && NimBLEDevice::getAdvertising()->isAdvertising()) {
+        setupAdvertisementData();
+    }
+}
+
+void BLEBeacon::setMeasuredPower(int8_t power) {
+    measuredPower = power;
+    if (isInitialized && NimBLEDevice::getAdvertising()->isAdvertising()) {
+        setupAdvertisementData();
+    }
 }
