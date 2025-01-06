@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 Control Panel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .card {
+            background: #f8f9fa;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ESP32 Control Panel</h1>
+        
+        <div class="card">
+            <h2>WiFi Settings</h2>
+            <div class="form-group">
+                <label>AP Name:</label>
+                <input type="text" id="apName" placeholder="Enter AP name">
+            </div>
+            <div class="form-group">
+                <label>AP Password:</label>
+                <input type="text" id="apPassword" placeholder="Enter AP password (min 8 chars)">
+            </div>
+            <button onclick="updateWiFi()">Update WiFi Settings</button>
+            <div id="wifiStatus" class="status"></div>
+        </div>
+
+        <div class="card">
+            <h2>BLE Beacon Settings</h2>
+            <div class="form-group">
+                <label>UUID:</label>
+                <input type="text" id="uuid" placeholder="Enter UUID">
+            </div>
+            <div class="form-group">
+                <label>Major:</label>
+                <input type="number" id="major" placeholder="Enter major value">
+            </div>
+            <div class="form-group">
+                <label>Minor:</label>
+                <input type="number" id="minor" placeholder="Enter minor value">
+            </div>
+            <div class="form-group">
+                <label>TX Power:</label>
+                <input type="number" id="txPower" placeholder="Enter TX power">
+            </div>
+            <button onclick="updateBLE()">Update BLE Settings</button>
+            <div id="bleStatus" class="status"></div>
+        </div>
+    </div>
+
+    <script>
+        // Fetch current settings when page loads
+        window.onload = function() {
+            fetchSettings();
+        };
+
+        function fetchSettings() {
+            fetch('/settings')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('apName').value = data.apName || '';
+                    document.getElementById('uuid').value = data.uuid || '';
+                    document.getElementById('major').value = data.major || '';
+                    document.getElementById('minor').value = data.minor || '';
+                    document.getElementById('txPower').value = data.txPower || '';
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        function updateWiFi() {
+            const data = {
+                apName: document.getElementById('apName').value,
+                apPassword: document.getElementById('apPassword').value
+            };
+
+            fetch('/wifi', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                const status = document.getElementById('wifiStatus');
+                status.textContent = data.message;
+                status.className = 'status ' + (data.success ? 'success' : 'error');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const status = document.getElementById('wifiStatus');
+                status.textContent = 'Error updating WiFi settings';
+                status.className = 'status error';
+            });
+        }
+
+        function updateBLE() {
+            const data = {
+                uuid: document.getElementById('uuid').value,
+                major: parseInt(document.getElementById('major').value),
+                minor: parseInt(document.getElementById('minor').value),
+                txPower: parseInt(document.getElementById('txPower').value)
+            };
+
+            fetch('/ble', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                const status = document.getElementById('bleStatus');
+                status.textContent = data.message;
+                status.className = 'status ' + (data.success ? 'success' : 'error');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const status = document.getElementById('bleStatus');
+                status.textContent = 'Error updating BLE settings';
+                status.className = 'status error';
+            });
+        }
+    </script>
+</body>
+</html>
