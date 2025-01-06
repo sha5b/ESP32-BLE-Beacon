@@ -3,87 +3,32 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <SPIFFS.h>
-#include <Arduino_JSON.h>
+#include <DNSServer.h>
 #include "config.h"
 #include "BLEBeacon.h"
 
 // Create instances
 static BLEBeacon bleBeacon;
 AsyncWebServer server(80);
-
-// Default settings from config.h
-String apName = AP_SSID;
-String apPassword = AP_PASSWORD;
-String bleUUID = DEFAULT_BLE_UUID;
-int bleMajor = DEFAULT_BLE_MAJOR;
-int bleMinor = DEFAULT_BLE_MINOR;
-int bleTxPower = DEFAULT_BLE_TXPOWER;
+DNSServer dnsServer;
+const byte DNS_PORT = 53;
 
 /**
- * Initialize WiFi in both Station and AP modes
+ * Initialize WiFi in AP mode
  */
 void initWiFi() {
-    // Set WiFi to AP+STA mode
-    WiFi.mode(WIFI_AP_STA);
+    // Set WiFi to AP mode
+    WiFi.mode(WIFI_AP);
     
-    // Start Access Point
-    WiFi.softAP(AP_SSID, AP_PASSWORD);
+    // Start Access Point (open network, no password)
+    WiFi.softAP(AP_SSID);
     Serial.println("WiFi AP Started");
     Serial.print("AP IP Address: ");
     Serial.println(WiFi.softAPIP());
-    
-    // Set WiFi to use 2.4GHz band
-    WiFi.setHostname("ESP32-Beacon");
-    
-    // Connect to WiFi network
-    Serial.print("Connecting to WiFi network: ");
-    Serial.println(WIFI_SSID);
-    
-    // Disconnect from any previous connection
-    WiFi.disconnect(true);
-    delay(1000);
-    
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < MAX_WIFI_ATTEMPTS) {
-        delay(1000);
-        Serial.print(".");
-        attempts++;
-        
-        if (attempts % 5 == 0) {
-            Serial.println();
-            Serial.print("Still trying to connect. Status: ");
-            switch(WiFi.status()) {
-                case WL_NO_SSID_AVAIL:
-                    Serial.println("Network not found");
-                    break;
-                case WL_CONNECT_FAILED:
-                    Serial.println("Wrong password");
-                    break;
-                case WL_IDLE_STATUS:
-                    Serial.println("Idle status");
-                    break;
-                case WL_DISCONNECTED:
-                    Serial.println("Disconnected");
-                    WiFi.disconnect(true);
-                    delay(1000);
-                    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-                    break;
-                default:
-                    Serial.println(WiFi.status());
-            }
-        }
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nConnected to WiFi network");
-        Serial.print("Station IP Address: ");
-        Serial.println(WiFi.localIP());
-    } else {
-        Serial.println("\nFailed to connect to WiFi network");
-        Serial.println("Still operating in AP mode");
-    }
+
+    // Configure DNS Server
+    dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+    Serial.println("DNS Server started");
 }
 
 /**
@@ -101,73 +46,42 @@ void initSPIFFS() {
  * Setup web server routes and handlers
  */
 void setupServer() {
+    // Captive Portal Detection
+    server.on("/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/plain", "Microsoft NCSI");
+    });
+    server.on("/redirect", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->redirect("/");
+    });
+    server.on("/generate_204", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->redirect("/");
+    });
+    server.on("/gen_204", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->redirect("/");
+    });
+    server.on("/ncsi.txt", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/plain", "Microsoft NCSI");
+    });
+    server.on("/msftconnecttest/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/plain", "Microsoft Connect Test");
+    });
+    server.on("/kindle-wifi/wifistub.html", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->redirect("/");
+    });
+    server.on("/hotspot-detect.html", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->redirect("/");
+    });
+    server.on("/library/test/success.html", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->redirect("/");
+    });
+    
+    // Handle not found URLs
+    server.onNotFound([](AsyncWebServerRequest *request) {
+        request->redirect("/");
+    });
+    
     // Serve static files
     server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
-    
-    // Get current settings
-    server.on("/settings", HTTP_GET, [](AsyncWebServerRequest *request) {
-        JSONVar settings;
-        settings["apName"] = apName;
-        settings["uuid"] = bleUUID;
-        settings["major"] = bleMajor;
-        settings["minor"] = bleMinor;
-        settings["txPower"] = bleTxPower;
-        
-        String response = JSON.stringify(settings);
-        request->send(200, "application/json", response);
-    });
-    
-    // Update WiFi settings
-    server.on("/wifi", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
-        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-            String json = String((char*)data);
-            JSONVar settings = JSON.parse(json);
-            
-            if (JSON.typeof(settings) == "undefined") {
-                request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}");
-                return;
-            }
-            
-            apName = (const char*)settings["apName"];
-            apPassword = (const char*)settings["apPassword"];
-            
-            // Validate password length
-            if (apPassword.length() < 8) {
-                request->send(400, "application/json", 
-                    "{\"success\":false,\"message\":\"Password must be at least 8 characters\"}");
-                return;
-            }
-            
-            // Schedule a restart to apply new WiFi settings
-            request->send(200, "application/json", 
-                "{\"success\":true,\"message\":\"WiFi settings updated. Device will restart.\"}");
-            delay(1000);
-            ESP.restart();
-    });
-    
-    // Update BLE settings
-    server.on("/ble", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL,
-        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-            String json = String((char*)data);
-            JSONVar settings = JSON.parse(json);
-            
-            if (JSON.typeof(settings) == "undefined") {
-                request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}");
-                return;
-            }
-            
-            bleUUID = (const char*)settings["uuid"];
-            bleMajor = (int)settings["major"];
-            bleMinor = (int)settings["minor"];
-            bleTxPower = (int)settings["txPower"];
-            
-            // Update BLE beacon
-            bleBeacon.init(bleUUID.c_str(), bleMajor, bleMinor, bleTxPower);
-            bleBeacon.startAdvertising();
-            
-            request->send(200, "application/json", 
-                "{\"success\":true,\"message\":\"BLE settings updated successfully\"}");
-    });
     
     server.begin();
 }
@@ -189,7 +103,7 @@ void setup() {
     setupServer();
     
     // Initialize and start BLE beacon
-    bleBeacon.init(bleUUID.c_str(), bleMajor, bleMinor, bleTxPower);
+    bleBeacon.init(DEFAULT_BLE_UUID, DEFAULT_BLE_MAJOR, DEFAULT_BLE_MINOR, DEFAULT_BLE_TXPOWER);
     bleBeacon.startAdvertising();
     
     Serial.println("Setup Complete");
@@ -198,6 +112,9 @@ void setup() {
 void loop() {
     static unsigned long lastAdvertisingCheck = 0;
     const unsigned long ADVERTISING_CHECK_INTERVAL = 5000;
+    
+    // Process DNS requests
+    dnsServer.processNextRequest();
     
     // Periodically restart advertising to ensure visibility
     unsigned long currentMillis = millis();
@@ -210,5 +127,5 @@ void loop() {
         }
     }
     
-    delay(100);
+    delay(10); // Reduced delay for better DNS response
 }
