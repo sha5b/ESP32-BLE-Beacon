@@ -20,14 +20,25 @@ void initWiFi() {
     // Set WiFi to AP mode
     WiFi.mode(WIFI_AP);
     
-    // Start Access Point (open network, no password)
-    WiFi.softAP(AP_SSID);
+    // Start Access Point with optimal settings for captive portal
+    WiFi.softAP(AP_SSID, nullptr, 1, 0, 4); // channel 1, not hidden, max 4 connections
+    
+    // Disable power-saving mode for better response
+    WiFi.setSleep(false);
     Serial.println("WiFi AP Started");
     Serial.print("AP IP Address: ");
     Serial.println(WiFi.softAPIP());
 
-    // Configure DNS Server
-    dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+    // Configure DNS Server to redirect all domains to our IP
+    IPAddress apIP = WiFi.softAPIP();
+    // Set DNS to respond with our IP for all domains
+    dnsServer.setTTL(0);  // Time-to-live 0 for no caching
+    dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+    dnsServer.start(DNS_PORT, "*", apIP);
+    
+    // Force DNS settings
+    WiFi.softAPsetHostname(AP_SSID);
+    WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
     Serial.println("DNS Server started");
 }
 
@@ -46,38 +57,54 @@ void initSPIFFS() {
  * Setup web server routes and handlers
  */
 void setupServer() {
-    // Captive Portal Detection
-    server.on("/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/plain", "Microsoft NCSI");
+    // iOS Captive Portal Detection - Return a page that triggers the notification
+    server.on("/hotspot-detect.html", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncWebServerResponse *response = request->beginResponse(200, "text/html",
+            "<!DOCTYPE html><html><head><title>Captive Portal</title></head><body>Please <a href='http://" +
+            WiFi.softAPIP().toString() + "'>click here</a> to continue.</body></html>");
+        response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        request->send(response);
     });
-    server.on("/redirect", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->redirect("/");
+
+    // iOS Alternate Detection Paths
+    server.on("/library/test/success.html", HTTP_GET, [](AsyncWebServerRequest *request) {
+        AsyncWebServerResponse *response = request->beginResponse(200, "text/html",
+            "<!DOCTYPE html><html><head><title>Captive Portal</title></head><body>Please <a href='http://" +
+            WiFi.softAPIP().toString() + "'>click here</a> to continue.</body></html>");
+        response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        request->send(response);
     });
+
+    // Android Captive Portal Detection
     server.on("/generate_204", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->redirect("/");
+        request->redirect("http://" + WiFi.softAPIP().toString());
     });
     server.on("/gen_204", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->redirect("/");
+        request->redirect("http://" + WiFi.softAPIP().toString());
+    });
+
+    // Windows/Microsoft Detection
+    server.on("/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/plain", "Microsoft NCSI");
     });
     server.on("/ncsi.txt", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(200, "text/plain", "Microsoft NCSI");
     });
-    server.on("/msftconnecttest/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/plain", "Microsoft Connect Test");
-    });
-    server.on("/kindle-wifi/wifistub.html", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->redirect("/");
-    });
-    server.on("/hotspot-detect.html", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->redirect("/");
-    });
-    server.on("/library/test/success.html", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->redirect("/");
-    });
-    
-    // Handle not found URLs
+
+    // Handle all other URLs
     server.onNotFound([](AsyncWebServerRequest *request) {
-        request->redirect("/");
+        String host = request->host();
+        if (host.indexOf("apple") != -1 || host.indexOf("captive") != -1) {
+            // iOS devices - return a page that triggers the notification
+            AsyncWebServerResponse *response = request->beginResponse(200, "text/html",
+                "<!DOCTYPE html><html><head><title>Captive Portal</title></head><body>Please <a href='http://" +
+                WiFi.softAPIP().toString() + "'>click here</a> to continue.</body></html>");
+            response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            request->send(response);
+        } else {
+            // All other requests - redirect to our main page
+            request->redirect("http://" + WiFi.softAPIP().toString());
+        }
     });
     
     // Serve static files
@@ -127,5 +154,6 @@ void loop() {
         }
     }
     
-    delay(10); // Reduced delay for better DNS response
+    // Process DNS requests more frequently for faster response
+    delay(1);
 }

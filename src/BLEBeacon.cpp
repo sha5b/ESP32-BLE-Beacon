@@ -9,12 +9,14 @@ void BLEBeacon::init(const char* uuid, uint16_t maj, uint16_t min, int8_t power)
     // Initialize BLE device with name
     NimBLEDevice::init(DEVICE_NAME);
     
-    // Set power to maximum for better range
-    NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+    // Set power level optimized for iOS detection
+    // Using medium power level for better iOS compatibility
+    NimBLEDevice::setPower(ESP_PWR_LVL_P3);
     
     // Set up scan response data with device name
     NimBLEAdvertisementData scanResponse;
     scanResponse.setName(DEVICE_NAME);
+    scanResponse.setFlags(0x06); // BR/EDR Not Supported + LE General Discoverable Mode
     NimBLEDevice::getAdvertising()->setScanResponseData(scanResponse);
     
     // Set iBeacon parameters
@@ -37,9 +39,9 @@ void BLEBeacon::setupAdvertisementData() {
     
     std::string payload;
     
-    // Apple iBeacon prefix
+    // Apple iBeacon prefix with proper flags for iOS
     uint8_t prefix[] = {
-        0x02, 0x01, 0x06,        // Flags
+        0x02, 0x01, 0x06,        // Flags: LE General Discoverable + BR/EDR Not Supported
         0x1A, 0xFF,              // Manufacturer specific data (26 bytes)
         0x4C, 0x00,              // Apple Company ID (0x004C)
         0x02, 0x15               // iBeacon type and length
@@ -69,9 +71,12 @@ void BLEBeacon::setupAdvertisementData() {
     advData.addData(payload);
     pAdvertising->setAdvertisementData(advData);
     
-    // Configure advertising parameters for better visibility
-    pAdvertising->setMinInterval(0x20);  // 32ms
-    pAdvertising->setMaxInterval(0x40);  // 64ms
+    // Configure advertising parameters optimized for iOS detection
+    // iOS works best with 100ms intervals (0x64 = 100ms)
+    pAdvertising->setMinInterval(0x64);  // 100ms
+    pAdvertising->setMaxInterval(0x64);  // 100ms
+    pAdvertising->setMinPreferred(0x64); 
+    pAdvertising->setMaxPreferred(0x64);
 }
 
 void BLEBeacon::startAdvertising() {

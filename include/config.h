@@ -15,7 +15,7 @@
 #define DEFAULT_BLE_UUID "8ec76ea3-6668-48da-9866-75be8bc86f4d"
 #define DEFAULT_BLE_MAJOR 1
 #define DEFAULT_BLE_MINOR 1
-#define DEFAULT_BLE_TXPOWER -59
+#define DEFAULT_BLE_TXPOWER -65  // Calibrated power level for better iOS detection
 
 // Maximum connection attempts before restart
 #define MAX_WIFI_ATTEMPTS 20
