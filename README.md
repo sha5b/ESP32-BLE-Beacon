@@ -89,4 +89,11 @@ The project uses:
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the Non-Commercial Open Source License (NCOSL). This means:
+
+- Free for non-commercial use
+- Requires attribution
+- Source code must remain open source
+- Commercial use requires explicit permission
+
+See the LICENSE file for full details.
